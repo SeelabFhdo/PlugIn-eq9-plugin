@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+
+service ApplianceControlService {
+  rpc init(InitCall) returns (EmptyMessage);
+  rpc executeProgram(ProgramCall) returns (stream ProgramProgressResponse);
+  rpc subscribeToParameters(SubscriptionRequest) returns (stream ParameterStatusUpdate);
+}
+
+message InitCall {
+  map<string, string> parameters = 1;
+}
+
+message SubscriptionRequest {
+  //For future usecases
+}
+
+message EmptyMessage {
+
+}
+
+message ProgramCall {
+  string programId = 1;
+  map<string, string> parameters = 2;
+}
+
+message ProgramProgressResponse {
+  bool failure = 1;
+  string message = 2;
+  double progress = 3;
+}
+
+message ParameterStatusUpdate {
+  string parameterId = 1;
+  string parameterValue = 2;
+}
