@@ -6,7 +6,7 @@ build:
   stage: build
   image: maven:3.8-openjdk-17
   script:
-    - mvn clean package -s ci_settings.xml
+    - mvn clean package
     - ls target
   only:
     - merge_requests
