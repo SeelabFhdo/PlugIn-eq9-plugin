@@ -1,14 +1,13 @@
 import ApplianceControlServiceGrpc.ApplianceControlServiceImplBase
-import AppliancePlugin.ParameterStatusUpdate
 import de.fhdo.CoffeeProxy.CoffeeProxy
-import de.fhdo.CoffeeProxy.CoffeeService
 import de.fhdo.CoffeeProxy.Model.CoffeeOption
 import de.fhdo.CoffeeProxy.Sse.SseCoffeeCallbackHandler
 import io.grpc.ServerBuilder
 import io.grpc.stub.StreamObserver
 import java.time.Instant
 
-class CoffeeController : ApplianceControlServiceImplBase(), SseCoffeeCallbackHandler {
+class CoffeeController : ApplianceControlServiceImplBase(),
+    SseCoffeeCallbackHandler {
 
     private lateinit var coffeeProxy: CoffeeProxy
     private lateinit var lastUpdate: Instant

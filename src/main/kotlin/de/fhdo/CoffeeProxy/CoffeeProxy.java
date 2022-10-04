@@ -2,9 +2,9 @@ package de.fhdo.CoffeeProxy;
 
 
 import de.fhdo.CoffeeProxy.Authentication.TokenAuthenticator;
-import de.fhdo.CoffeeProxy.Model.*;
 import de.fhdo.CoffeeProxy.Sse.SseCoffeeCallbackHandler;
 import de.fhdo.CoffeeProxy.Sse.SseCoffeeClient;
+import de.fhdo.CoffeeProxy.Model.*;
 import okhttp3.OkHttpClient;
 import retrofit2.Retrofit;
 import retrofit2.converter.gson.GsonConverterFactory;
