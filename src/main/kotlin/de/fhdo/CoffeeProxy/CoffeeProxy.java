@@ -101,7 +101,7 @@ public class CoffeeProxy implements SseCoffeeCallbackHandler {
             getAvailableBeverages();
         }
         for (String availableBeverage : selectablePrograms) {
-            if (availableBeverage.endsWith(beverage)) {
+            if (availableBeverage.toLowerCase().endsWith(beverage.toLowerCase())) {
                 var program = new SelectableProgram();
                 program.setKey(availableBeverage);
                 coffeeService.setSelectedProgram(new SelectableProgramContainer(program)).execute();
