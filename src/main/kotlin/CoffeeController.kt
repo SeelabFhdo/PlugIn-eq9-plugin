@@ -67,7 +67,7 @@ class CoffeeController : ApplianceControlServiceImplBase(),
 
         }
         Thread.sleep(1000)
-        //coffeeProxy.start()
+        coffeeProxy.start()
         currentProgramObserver = responseObserver
         currentProgramStartedAt = Instant.now()
     }
