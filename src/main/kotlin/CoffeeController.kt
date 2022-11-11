@@ -13,6 +13,9 @@ class CoffeeController : ApplianceControlServiceImplBase(),
     private lateinit var lastUpdate: Instant
     private var currentProgramObserver: StreamObserver<AppliancePlugin.ProgramProgressResponse>? = null
     private var currentProgramStartedAt: Instant? = null
+    private var doubleBeverage: Boolean = false
+    private var brewingSecond: Boolean = false
+    private var secondStartScheduled = false
 
 
     override fun init(
@@ -37,9 +40,9 @@ class CoffeeController : ApplianceControlServiceImplBase(),
     ) {
 
         //Check if there is something running
-        if (currentProgramStartedAt != null && currentProgramStartedAt!!.isAfter(Instant.now().minusSeconds(60 * 5))) {
+        if (currentProgramStartedAt != null && currentProgramStartedAt!!.isAfter(Instant.now().minusSeconds(60 * 2))) {
             responseObserver.onNext(
-                AppliancePlugin.ProgramProgressResponse.newBuilder().setProgress(0.0).setFailure(true)
+                AppliancePlugin.ProgramProgressResponse.newBuilder().setProgress(100.0).setFailure(true)
                     .setMessage("There is already a program running").build()
             )
             responseObserver.onCompleted()
@@ -53,31 +56,63 @@ class CoffeeController : ApplianceControlServiceImplBase(),
             lastUpdate = Instant.now()
         }
 
-        coffeeProxy.beverage = request.programId
-        Thread.sleep(500)
-        request.parametersMap.entries.forEach {
+        secondStartScheduled = false
+        doubleBeverage = false
+        brewingSecond = false
+
+        doubleBeverage = request.parametersMap["doubleBeverage"]?.toBooleanStrictOrNull() ?: false
+        startProgram(request.programId, request.parametersMap)
+        currentProgramObserver = responseObserver
+        currentProgramStartedAt = Instant.now()
+    }
+
+    private fun startProgram(programId: String, params: Map<String, String>) {
+        coffeeProxy.beverage = programId
+        Thread.sleep(1000)
+        params.entries.forEach {
             when (it.key) {
                 "fillQuantity" -> {
                     coffeeProxy.fillQuantity = it.value.toInt()
                 }
+
                 "beanAmount" -> {
                     coffeeProxy.beanAmount = it.value
+                }
+
+                "temperature" -> {
+                    coffeeProxy.coffeeTemperature = it.value
+                }
+
+                "intensity" -> {
+                    coffeeProxy.flowRate = it.value
+                }
+
+                "beanContainer" -> {
+                    coffeeProxy.beanContainer = it.value
                 }
             }
 
         }
         Thread.sleep(1000)
         coffeeProxy.start()
-        currentProgramObserver = responseObserver
-        currentProgramStartedAt = Instant.now()
     }
+
 
     override fun handleOptionsChanged(options: MutableList<CoffeeOption>) {
         options.forEach {
             try {
                 println("${it.key} : ${it.value}")
                 if (it.key == "BSH.Common.Option.ProgramProgress") {
-                    val progress = it.value.toString().toDouble()
+                    var progress = it.value.toString().toDouble()
+                    if(progress == 0.0) {
+                        return
+                    }
+                    if(doubleBeverage)
+                        progress /= 2
+                    else if(brewingSecond)
+                        progress = 50 + (progress / 2)
+
+
                     currentProgramObserver?.onNext(
                         AppliancePlugin.ProgramProgressResponse.newBuilder().setProgress(progress)
                             .setFailure(false).build()
@@ -87,6 +122,27 @@ class CoffeeController : ApplianceControlServiceImplBase(),
                         currentProgramStartedAt = null
                         currentProgramObserver = null
                     }
+                }
+                else if(it.key == "BSH.Common.Root.ActiveProgram" && it.value == null) {
+                    println("Program Finished")
+                    if(doubleBeverage) {
+                        doubleBeverage = false
+                        brewingSecond = true
+                        if(coffeeProxy.beverage != null)
+                            coffeeProxy.start()
+                        else
+                            secondStartScheduled = true
+
+                    }
+                    else if(brewingSecond) {
+                        brewingSecond = false
+                        doubleBeverage = false
+                    }
+                }
+                //If second start scheduled
+                else if(it.key == "BSH.Common.Root.SelectedProgram" && it.value != null && secondStartScheduled) {
+                    secondStartScheduled = false
+                    coffeeProxy.start()
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
