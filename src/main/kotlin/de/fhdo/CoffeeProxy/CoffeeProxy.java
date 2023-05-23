@@ -169,7 +169,6 @@ public class CoffeeProxy implements SseCoffeeCallbackHandler {
         var option = new CoffeeOption();
         option.setKey(key);
         option.setValue("ConsumerProducts.CoffeeMaker.EnumType.BeanAmount." + value);
-        coffeeService.setOption(new OptionContainer(option), key).execute();
     }
 
     public String getCoffeeTemperature() {
@@ -209,6 +208,20 @@ public class CoffeeProxy implements SseCoffeeCallbackHandler {
         option.setKey(key);
         option.setValue("ConsumerProducts.CoffeeMaker.EnumType.FlowRate." + value);
         coffeeService.setOption(new OptionContainer(option), key).execute();
+    }
+
+    public void setMultipleBeverages(boolean multipleBeverages) throws IOException {
+        var key = "ConsumerProducts.CoffeeMaker.Option.MultipleBeverages";
+        var option = new CoffeeOption();
+        System.out.println(multipleBeverages);
+        option.setKey(key);
+        option.setValue(multipleBeverages);
+        coffeeService.setOption(new OptionContainer(option), key).execute();
+    }
+
+    public Boolean getMultipleBeverages() {
+        var value = getOptionValue("ConsumerProducts.CoffeeMaker.Option.MultipleBeverages");
+        return value != null && Boolean.parseBoolean(value.toString());
     }
 
     public Object getOptionValue(String key) {

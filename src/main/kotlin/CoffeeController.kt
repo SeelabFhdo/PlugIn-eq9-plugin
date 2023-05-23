@@ -13,9 +13,6 @@ class CoffeeController : ApplianceControlServiceImplBase(),
     private lateinit var lastUpdate: Instant
     private var currentProgramObserver: StreamObserver<AppliancePlugin.ProgramProgressResponse>? = null
     private var currentProgramStartedAt: Instant? = null
-    private var doubleBeverage: Boolean = false
-    private var brewingSecond: Boolean = false
-    private var secondStartScheduled = false
 
 
     override fun init(
@@ -55,12 +52,6 @@ class CoffeeController : ApplianceControlServiceImplBase(),
             coffeeProxy.update()
             lastUpdate = Instant.now()
         }
-
-        secondStartScheduled = false
-        doubleBeverage = false
-        brewingSecond = false
-
-        doubleBeverage = request.parametersMap["doubleBeverage"]?.toBooleanStrictOrNull() ?: false
         startProgram(request.programId, request.parametersMap)
         currentProgramObserver = responseObserver
         currentProgramStartedAt = Instant.now()
@@ -86,7 +77,9 @@ class CoffeeController : ApplianceControlServiceImplBase(),
                 "intensity" -> {
                     coffeeProxy.flowRate = it.value
                 }
-
+                "doubleBeverage" -> {
+                    coffeeProxy.multipleBeverages = it.value.toBooleanStrictOrNull() ?: false
+                }
                 "beanContainer" -> {
                     coffeeProxy.beanContainer = it.value
                 }
@@ -94,7 +87,7 @@ class CoffeeController : ApplianceControlServiceImplBase(),
 
         }
         Thread.sleep(1000)
-        coffeeProxy.start()
+       // coffeeProxy.start()
     }
 
 
@@ -107,12 +100,6 @@ class CoffeeController : ApplianceControlServiceImplBase(),
                     if(progress == 0.0) {
                         return
                     }
-                    if(doubleBeverage)
-                        progress /= 2
-                    else if(brewingSecond)
-                        progress = 50 + (progress / 2)
-
-
                     currentProgramObserver?.onNext(
                         AppliancePlugin.ProgramProgressResponse.newBuilder().setProgress(progress)
                             .setFailure(false).build()
@@ -125,24 +112,7 @@ class CoffeeController : ApplianceControlServiceImplBase(),
                 }
                 else if(it.key == "BSH.Common.Root.ActiveProgram" && it.value == null) {
                     println("Program Finished")
-                    if(doubleBeverage) {
-                        doubleBeverage = false
-                        brewingSecond = true
-                        if(coffeeProxy.beverage != null)
-                            coffeeProxy.start()
-                        else
-                            secondStartScheduled = true
 
-                    }
-                    else if(brewingSecond) {
-                        brewingSecond = false
-                        doubleBeverage = false
-                    }
-                }
-                //If second start scheduled
-                else if(it.key == "BSH.Common.Root.SelectedProgram" && it.value != null && secondStartScheduled) {
-                    secondStartScheduled = false
-                    coffeeProxy.start()
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
