@@ -4,6 +4,7 @@ import de.fhdo.CoffeeProxy.Model.CoffeeOption
 import de.fhdo.CoffeeProxy.Sse.SseCoffeeCallbackHandler
 import io.grpc.ServerBuilder
 import io.grpc.stub.StreamObserver
+import kotlinx.coroutines.channels.Channel
 import java.time.Instant
 
 class CoffeeController : ApplianceControlServiceImplBase(),
@@ -14,6 +15,7 @@ class CoffeeController : ApplianceControlServiceImplBase(),
     private var currentProgramObserver: StreamObserver<AppliancePlugin.ProgramProgressResponse>? = null
     private var currentProgramStartedAt: Instant? = null
 
+    private var updateChannel = Channel<String>(50)
 
     override fun init(
         request: AppliancePlugin.InitCall,
@@ -73,7 +75,6 @@ class CoffeeController : ApplianceControlServiceImplBase(),
                 "temperature" -> {
                     coffeeProxy.coffeeTemperature = it.value
                 }
-
                 "intensity" -> {
                     coffeeProxy.flowRate = it.value
                 }
@@ -104,13 +105,11 @@ class CoffeeController : ApplianceControlServiceImplBase(),
                         AppliancePlugin.ProgramProgressResponse.newBuilder().setProgress(progress)
                             .setFailure(false).build()
                     )
-                    if (progress >= 100) {
-                        currentProgramObserver?.onCompleted()
-                        currentProgramStartedAt = null
-                        currentProgramObserver = null
-                    }
                 }
                 else if(it.key == "BSH.Common.Root.ActiveProgram" && it.value == null) {
+                    currentProgramObserver?.onCompleted()
+                    currentProgramStartedAt = null
+                    currentProgramObserver = null
                     println("Program Finished")
 
                 }
