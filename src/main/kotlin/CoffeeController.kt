@@ -4,7 +4,11 @@ import de.fhdo.CoffeeProxy.Model.CoffeeOption
 import de.fhdo.CoffeeProxy.Sse.SseCoffeeCallbackHandler
 import io.grpc.ServerBuilder
 import io.grpc.stub.StreamObserver
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import java.time.Instant
+import java.util.*
 
 class CoffeeController : ApplianceControlServiceImplBase(),
     SseCoffeeCallbackHandler {
@@ -13,10 +17,8 @@ class CoffeeController : ApplianceControlServiceImplBase(),
     private lateinit var lastUpdate: Instant
     private var currentProgramObserver: StreamObserver<AppliancePlugin.ProgramProgressResponse>? = null
     private var currentProgramStartedAt: Instant? = null
-    private var doubleBeverage: Boolean = false
-    private var brewingSecond: Boolean = false
-    private var secondStartScheduled = false
 
+    private var updateChannel = Channel<String>(50)
 
     override fun init(
         request: AppliancePlugin.InitCall,
@@ -55,12 +57,6 @@ class CoffeeController : ApplianceControlServiceImplBase(),
             coffeeProxy.update()
             lastUpdate = Instant.now()
         }
-
-        secondStartScheduled = false
-        doubleBeverage = false
-        brewingSecond = false
-
-        doubleBeverage = request.parametersMap["doubleBeverage"]?.toBooleanStrictOrNull() ?: false
         startProgram(request.programId, request.parametersMap)
         currentProgramObserver = responseObserver
         currentProgramStartedAt = Instant.now()
@@ -68,7 +64,22 @@ class CoffeeController : ApplianceControlServiceImplBase(),
 
     private fun startProgram(programId: String, params: Map<String, String>) {
         coffeeProxy.beverage = programId
-        Thread.sleep(1000)
+        while (!updateChannel.isEmpty) {
+            runBlocking {
+                updateChannel.receive()
+            }
+        }
+        waitForUpdateKey("selectedProgram")
+        //Make sure nothing else changes
+        runBlocking {
+            try {
+                withTimeout(300) {
+                    updateChannel.receive()
+                }
+            } catch (_: Exception) {
+                //Nothing to do here
+            }
+        }
         params.entries.forEach {
             when (it.key) {
                 "fillQuantity" -> {
@@ -85,16 +96,36 @@ class CoffeeController : ApplianceControlServiceImplBase(),
 
                 "intensity" -> {
                     coffeeProxy.flowRate = it.value
-                }
 
+                }
+                "doubleBeverage" -> {
+                    coffeeProxy.multipleBeverages = it.value.toBooleanStrictOrNull() ?: false
+
+                }
                 "beanContainer" -> {
                     coffeeProxy.beanContainer = it.value
+
                 }
             }
 
         }
         Thread.sleep(1000)
         coffeeProxy.start()
+    }
+
+    private fun waitForUpdateKey(literal: String, timeout: Long = 1000) {
+
+        runBlocking {
+            try {
+                withTimeout(timeout) {
+                    while (!updateChannel.receive().lowercase().contains(literal.lowercase())) {
+                    }
+
+                }
+            } catch (_: Exception) {
+                println("Timed out for waiting for $literal")
+            }
+        }
     }
 
 
@@ -104,46 +135,22 @@ class CoffeeController : ApplianceControlServiceImplBase(),
                 println("${it.key} : ${it.value}")
                 if (it.key == "BSH.Common.Option.ProgramProgress") {
                     var progress = it.value.toString().toDouble()
-                    if(progress == 0.0) {
+                    if (progress == 0.0) {
                         return
                     }
-                    if(doubleBeverage)
-                        progress /= 2
-                    else if(brewingSecond)
-                        progress = 50 + (progress / 2)
-
-
                     currentProgramObserver?.onNext(
                         AppliancePlugin.ProgramProgressResponse.newBuilder().setProgress(progress)
                             .setFailure(false).build()
                     )
-                    if (progress >= 100) {
-                        currentProgramObserver?.onCompleted()
-                        currentProgramStartedAt = null
-                        currentProgramObserver = null
-                    }
-                }
-                else if(it.key == "BSH.Common.Root.ActiveProgram" && it.value == null) {
+                } else if (it.key == "BSH.Common.Root.ActiveProgram" && it.value == null) {
+                    currentProgramObserver?.onCompleted()
+                    currentProgramStartedAt = null
+                    currentProgramObserver = null
+                    coffeeProxy.multipleBeverages = false
                     println("Program Finished")
-                    if(doubleBeverage) {
-                        doubleBeverage = false
-                        brewingSecond = true
-                        if(coffeeProxy.beverage != null)
-                            coffeeProxy.start()
-                        else
-                            secondStartScheduled = true
 
-                    }
-                    else if(brewingSecond) {
-                        brewingSecond = false
-                        doubleBeverage = false
-                    }
                 }
-                //If second start scheduled
-                else if(it.key == "BSH.Common.Root.SelectedProgram" && it.value != null && secondStartScheduled) {
-                    secondStartScheduled = false
-                    coffeeProxy.start()
-                }
+                updateChannel.trySend(it.key)
             } catch (e: Exception) {
                 e.printStackTrace()
             }
