@@ -5,7 +5,10 @@ import de.fhdo.CoffeeProxy.Sse.SseCoffeeCallbackHandler
 import io.grpc.ServerBuilder
 import io.grpc.stub.StreamObserver
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import java.time.Instant
+import java.util.*
 
 class CoffeeController : ApplianceControlServiceImplBase(),
     SseCoffeeCallbackHandler {
@@ -61,7 +64,22 @@ class CoffeeController : ApplianceControlServiceImplBase(),
 
     private fun startProgram(programId: String, params: Map<String, String>) {
         coffeeProxy.beverage = programId
-        Thread.sleep(1000)
+        while (!updateChannel.isEmpty) {
+            runBlocking {
+                updateChannel.receive()
+            }
+        }
+        waitForUpdateKey("selectedProgram")
+        //Make sure nothing else changes
+        runBlocking {
+            try {
+                withTimeout(300) {
+                    updateChannel.receive()
+                }
+            } catch (_: Exception) {
+                //Nothing to do here
+            }
+        }
         params.entries.forEach {
             when (it.key) {
                 "fillQuantity" -> {
@@ -75,20 +93,39 @@ class CoffeeController : ApplianceControlServiceImplBase(),
                 "temperature" -> {
                     coffeeProxy.coffeeTemperature = it.value
                 }
+
                 "intensity" -> {
                     coffeeProxy.flowRate = it.value
+
                 }
                 "doubleBeverage" -> {
                     coffeeProxy.multipleBeverages = it.value.toBooleanStrictOrNull() ?: false
+
                 }
                 "beanContainer" -> {
                     coffeeProxy.beanContainer = it.value
+
                 }
             }
 
         }
         Thread.sleep(1000)
-       // coffeeProxy.start()
+        coffeeProxy.start()
+    }
+
+    private fun waitForUpdateKey(literal: String, timeout: Long = 1000) {
+
+        runBlocking {
+            try {
+                withTimeout(timeout) {
+                    while (!updateChannel.receive().lowercase().contains(literal.lowercase())) {
+                    }
+
+                }
+            } catch (_: Exception) {
+                println("Timed out for waiting for $literal")
+            }
+        }
     }
 
 
@@ -98,21 +135,22 @@ class CoffeeController : ApplianceControlServiceImplBase(),
                 println("${it.key} : ${it.value}")
                 if (it.key == "BSH.Common.Option.ProgramProgress") {
                     var progress = it.value.toString().toDouble()
-                    if(progress == 0.0) {
+                    if (progress == 0.0) {
                         return
                     }
                     currentProgramObserver?.onNext(
                         AppliancePlugin.ProgramProgressResponse.newBuilder().setProgress(progress)
                             .setFailure(false).build()
                     )
-                }
-                else if(it.key == "BSH.Common.Root.ActiveProgram" && it.value == null) {
+                } else if (it.key == "BSH.Common.Root.ActiveProgram" && it.value == null) {
                     currentProgramObserver?.onCompleted()
                     currentProgramStartedAt = null
                     currentProgramObserver = null
+                    coffeeProxy.multipleBeverages = false
                     println("Program Finished")
 
                 }
+                updateChannel.trySend(it.key)
             } catch (e: Exception) {
                 e.printStackTrace()
             }
