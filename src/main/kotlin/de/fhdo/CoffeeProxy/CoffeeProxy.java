@@ -141,11 +141,17 @@ public class CoffeeProxy implements SseCoffeeCallbackHandler {
 
     public void setFillQuantity(int value) throws IOException {
         var key = "ConsumerProducts.CoffeeMaker.Option.FillQuantity";
-        var programInfo = getProgramInfo(activeOptions.get("BSH.Common.Root.SelectedProgram").toString());
-        var optionInfo = programInfo.getOption(key);
         var option = new CoffeeOption();
         option.setKey(key);
         option.setUnit("ml");
+        option.setValue(computeFillQuantityForCurrentProgram(value));
+        coffeeService.setOption(new OptionContainer(option), key).execute();
+    }
+
+    public int computeFillQuantityForCurrentProgram(int value) throws IOException {
+        var programInfo = getProgramInfo(activeOptions.get("BSH.Common.Root.SelectedProgram").toString());
+        var key = "ConsumerProducts.CoffeeMaker.Option.FillQuantity";
+        var optionInfo = programInfo.getOption(key);
         var min = optionInfo.getConstraints().getMin();
         var max = optionInfo.getConstraints().getMax();
         var stepSize = optionInfo.getConstraints().getStepSize();
@@ -154,9 +160,7 @@ public class CoffeeProxy implements SseCoffeeCallbackHandler {
         } else if (value > max) {
             value = max;
         }
-        value = (int) (stepSize * (Math.round(value / (double) stepSize)));
-        option.setValue(value);
-        coffeeService.setOption(new OptionContainer(option), key).execute();
+        return  (int) (stepSize * (Math.round(value / (double) stepSize)));
     }
 
     public String getBeanAmount() {
@@ -169,6 +173,7 @@ public class CoffeeProxy implements SseCoffeeCallbackHandler {
         var option = new CoffeeOption();
         option.setKey(key);
         option.setValue("ConsumerProducts.CoffeeMaker.EnumType.BeanAmount." + value);
+        coffeeService.setOption(new OptionContainer(option), key).execute();
     }
 
     public String getCoffeeTemperature() {

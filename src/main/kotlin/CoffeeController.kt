@@ -8,7 +8,6 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import java.time.Instant
-import java.util.*
 
 class CoffeeController : ApplianceControlServiceImplBase(),
     SseCoffeeCallbackHandler {
@@ -42,7 +41,7 @@ class CoffeeController : ApplianceControlServiceImplBase(),
     ) {
 
         //Check if there is something running
-        if (currentProgramStartedAt != null && currentProgramStartedAt!!.isAfter(Instant.now().minusSeconds(60 * 2))) {
+        if (currentProgramStartedAt != null && currentProgramStartedAt!!.isAfter(Instant.now().minusSeconds(30))) {
             responseObserver.onNext(
                 AppliancePlugin.ProgramProgressResponse.newBuilder().setProgress(100.0).setFailure(true)
                     .setMessage("There is already a program running").build()
@@ -63,13 +62,15 @@ class CoffeeController : ApplianceControlServiceImplBase(),
     }
 
     private fun startProgram(programId: String, params: Map<String, String>) {
-        coffeeProxy.beverage = programId
         while (!updateChannel.isEmpty) {
             runBlocking {
                 updateChannel.receive()
             }
         }
-        waitForUpdateKey("selectedProgram")
+        if(coffeeProxy.beverage.lowercase() != programId.lowercase()) {
+            coffeeProxy.beverage = programId
+            waitForSingleUpdateKey("selectedProgram")
+        }
         //Make sure nothing else changes
         runBlocking {
             try {
@@ -80,40 +81,76 @@ class CoffeeController : ApplianceControlServiceImplBase(),
                 //Nothing to do here
             }
         }
+        val updateKeys = mutableListOf<String>()
         params.entries.forEach {
             when (it.key) {
                 "fillQuantity" -> {
-                    coffeeProxy.fillQuantity = it.value.toInt()
+                    val value = it.value.toInt()
+                    if(coffeeProxy.fillQuantity != coffeeProxy.computeFillQuantityForCurrentProgram(value)) {
+                        coffeeProxy.fillQuantity = it.value.toInt()
+                        waitForSingleUpdateKey("fillQuantity")
+                    }
                 }
 
                 "beanAmount" -> {
-                    coffeeProxy.beanAmount = it.value
+                    if(coffeeProxy.beanAmount != it.value) {
+                        coffeeProxy.beanAmount = it.value
+                        updateKeys.add("BeanAmount")
+                    }
                 }
 
                 "temperature" -> {
                     coffeeProxy.coffeeTemperature = it.value
+                    if(coffeeProxy.coffeeTemperature != it.value) {
+                        coffeeProxy.coffeeTemperature = it.value
+                        updateKeys.add("coffeeTemperature")
+                    }
                 }
 
                 "intensity" -> {
                     coffeeProxy.flowRate = it.value
+                    if(coffeeProxy.flowRate != it.value) {
+                        coffeeProxy.flowRate = it.value
+                        updateKeys.add("flowRate")
+                    }
 
                 }
                 "doubleBeverage" -> {
-                    coffeeProxy.multipleBeverages = it.value.toBooleanStrictOrNull() ?: false
+                    val value = it.value.toBooleanStrictOrNull() ?: false
+                    if(coffeeProxy.multipleBeverages != value) {
+                        coffeeProxy.multipleBeverages = value
+                        updateKeys.add("multipleBeverages")
+                    }
 
                 }
                 "beanContainer" -> {
-                    coffeeProxy.beanContainer = it.value
+                    if (coffeeProxy.beanContainer != it.value) {
+                        coffeeProxy.beanContainer = it.value
+                        updateKeys.add("beanContainer")
+                    }
 
                 }
             }
 
         }
-        Thread.sleep(1000)
+        //Check every key is updated
+        try {
+            runBlocking {
+                withTimeout(3000) {
+                    while (updateKeys.isNotEmpty()) {
+                        val receivedKey = updateChannel.receive()
+                        updateKeys.removeIf { receivedKey.lowercase().contains(it.lowercase())}
+                    }
+                }
+            }
+        } catch (_: Exception) {
+            println("Timeout waiting for update keys")
+        }
+        println("Starting program")
         coffeeProxy.start()
     }
 
-    private fun waitForUpdateKey(literal: String, timeout: Long = 1000) {
+    private fun waitForSingleUpdateKey(literal: String, timeout: Long = 3000) {
 
         runBlocking {
             try {
